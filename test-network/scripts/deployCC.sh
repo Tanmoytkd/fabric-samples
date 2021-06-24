@@ -109,56 +109,6 @@ fi
 # import utils
 . scripts/envVar.sh
 
-packageChaincode() {
-  set -x
-  peer lifecycle chaincode package ${CC_NAME}.tar.gz --path ${CC_SRC_PATH} --lang ${CC_RUNTIME_LANGUAGE} --label ${CC_NAME}_${CC_VERSION} >&log.txt
-  res=$?
-  { set +x; } 2>/dev/null
-  cat log.txt
-  verifyResult $res "Chaincode packaging has failed"
-  successln "Chaincode is packaged"
-}
-
-# installChaincode PEER ORG
-installChaincode() {
-  ORG=$1
-  setGlobals $ORG
-  set -x
-  peer lifecycle chaincode install ${CC_NAME}.tar.gz >&log.txt
-  res=$?
-  { set +x; } 2>/dev/null
-  cat log.txt
-  verifyResult $res "Chaincode installation on peer0.org${ORG} has failed"
-  successln "Chaincode is installed on peer0.org${ORG}"
-}
-
-# queryInstalled PEER ORG
-queryInstalled() {
-  ORG=$1
-  setGlobals $ORG
-  set -x
-  peer lifecycle chaincode queryinstalled >&log.txt
-  res=$?
-  { set +x; } 2>/dev/null
-  cat log.txt
-  PACKAGE_ID=$(sed -n "/${CC_NAME}_${CC_VERSION}/{s/^Package ID: //; s/, Label:.*$//; p;}" log.txt)
-  verifyResult $res "Query installed on peer0.org${ORG} has failed"
-  successln "Query installed successful on peer0.org${ORG} on channel"
-}
-
-# approveForMyOrg VERSION PEER ORG
-approveForMyOrg() {
-  ORG=$1
-  setGlobals $ORG
-  set -x
-  peer lifecycle chaincode approveformyorg -o localhost:7050 --ordererTLSHostnameOverride orderer.example.com --tls --cafile "$ORDERER_CA" --channelID $CHANNEL_NAME --name ${CC_NAME} --version ${CC_VERSION} --package-id ${PACKAGE_ID} --sequence ${CC_SEQUENCE} ${INIT_REQUIRED} ${CC_END_POLICY} ${CC_COLL_CONFIG} >&log.txt
-  res=$?
-  { set +x; } 2>/dev/null
-  cat log.txt
-  verifyResult $res "Chaincode definition approved on peer0.org${ORG} on channel '$CHANNEL_NAME' failed"
-  successln "Chaincode definition approved on peer0.org${ORG} on channel '$CHANNEL_NAME'"
-}
-
 # checkCommitReadiness VERSION PEER ORG
 checkCommitReadiness() {
   ORG=$1
@@ -208,35 +158,6 @@ commitChaincodeDefinition() {
   successln "Chaincode definition committed on channel '$CHANNEL_NAME'"
 }
 
-# queryCommitted ORG
-queryCommitted() {
-  ORG=$1
-  setGlobals $ORG
-  EXPECTED_RESULT="Version: ${CC_VERSION}, Sequence: ${CC_SEQUENCE}, Endorsement Plugin: escc, Validation Plugin: vscc"
-  infoln "Querying chaincode definition on peer0.org${ORG} on channel '$CHANNEL_NAME'..."
-  local rc=1
-  local COUNTER=1
-  # continue to poll
-  # we either get a successful response, or reach MAX RETRY
-  while [ $rc -ne 0 -a $COUNTER -lt $MAX_RETRY ]; do
-    sleep $DELAY
-    infoln "Attempting to Query committed status on peer0.org${ORG}, Retry after $DELAY seconds."
-    set -x
-    peer lifecycle chaincode querycommitted --channelID $CHANNEL_NAME --name ${CC_NAME} >&log.txt
-    res=$?
-    { set +x; } 2>/dev/null
-    test $res -eq 0 && VALUE=$(cat log.txt | grep -o '^Version: '$CC_VERSION', Sequence: [0-9]*, Endorsement Plugin: escc, Validation Plugin: vscc')
-    test "$VALUE" = "$EXPECTED_RESULT" && let rc=0
-    COUNTER=$(expr $COUNTER + 1)
-  done
-  cat log.txt
-  if test $rc -eq 0; then
-    successln "Query chaincode definition successful on peer0.org${ORG} on channel '$CHANNEL_NAME'"
-  else
-    fatalln "After $MAX_RETRY attempts, Query chaincode definition result on peer0.org${ORG} is INVALID!"
-  fi
-}
-
 chaincodeInvokeInit() {
   parsePeerConnectionParameters $@
   res=$?
@@ -282,46 +203,33 @@ chaincodeQuery() {
   fi
 }
 
-## package the chaincode
-packageChaincode
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
+  DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE" # if $SOURCE was a relative symlink, we need to resolve it relative to the path where the symlink file was located
+done
+DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
 
-## Install chaincode on peer0.org1 and peer0.org2
-infoln "Install chaincode on peer0.org1..."
-installChaincode 1
-infoln "Install chaincode on peer0.org2..."
-installChaincode 2
-infoln "Install chaincode on peer0.org3..."
-installChaincode 3
+$DIR/packageChaincode.sh 1 $@ repackage &
+$DIR/packageChaincode.sh 2 $@ &
+$DIR/packageChaincode.sh 3 $@ &
 
-## query whether the chaincode is installed
-## approve the definition for org1
-queryInstalled 1
-approveForMyOrg 1
+$DIR/packageChaincodeAndInstall.sh 1 $@ &
+$DIR/packageChaincodeAndInstall.sh 2 $@ &
+$DIR/packageChaincodeAndInstall.sh 3 $@ &
+wait
+echo "Wait if over"
+
+
+$DIR/queryInstalledChaincodeAndApprove.sh 1 $@ &
+$DIR/queryInstalledChaincodeAndApprove.sh 2 $@ &
+$DIR/queryInstalledChaincodeAndApprove.sh 3 $@ &
+wait
+echo "Wait if over"
 
 ## check whether the chaincode definition is ready to be committed
 ## expect org1 to have approved and org2, org3 not to
-checkCommitReadiness 1 "\"Org1MSP\": true" "\"Org2MSP\": false" "\"Org3MSP\": false"
-checkCommitReadiness 2 "\"Org1MSP\": true" "\"Org2MSP\": false" "\"Org3MSP\": false"
-checkCommitReadiness 3 "\"Org1MSP\": true" "\"Org2MSP\": false" "\"Org3MSP\": false"
-
-## query whether the chaincode is installed
-## approve the definition for org2
-queryInstalled 2
-approveForMyOrg 2
-
-## check whether the chaincode definition is ready to be committed
-## expect org1, org2 to have approved and org3 not to
-checkCommitReadiness 1 "\"Org1MSP\": true" "\"Org2MSP\": true" "\"Org3MSP\": false"
-checkCommitReadiness 2 "\"Org1MSP\": true" "\"Org2MSP\": true" "\"Org3MSP\": false"
-checkCommitReadiness 3 "\"Org1MSP\": true" "\"Org2MSP\": true" "\"Org3MSP\": false"
-
-## query whether the chaincode is installed
-## approve the definition for org2
-queryInstalled 3
-approveForMyOrg 3
-
-## check whether the chaincode definition is ready to be committed
-## expect org1, org2, org3 to have approved
 checkCommitReadiness 1 "\"Org1MSP\": true" "\"Org2MSP\": true" "\"Org3MSP\": true"
 checkCommitReadiness 2 "\"Org1MSP\": true" "\"Org2MSP\": true" "\"Org3MSP\": true"
 checkCommitReadiness 3 "\"Org1MSP\": true" "\"Org2MSP\": true" "\"Org3MSP\": true"
@@ -330,9 +238,11 @@ checkCommitReadiness 3 "\"Org1MSP\": true" "\"Org2MSP\": true" "\"Org3MSP\": tru
 commitChaincodeDefinition 1 2 3
 
 ## query on both orgs to see that the definition committed successfully
-queryCommitted 1
-queryCommitted 2
-queryCommitted 3
+$DIR/queryCommittedChaincodes.sh 1 $@ &
+$DIR/queryCommittedChaincodes.sh 2 $@ &
+$DIR/queryCommittedChaincodes.sh 3 $@ &
+wait
+echo "Wait if over"
 
 ## Invoke the chaincode - this does require that the chaincode have the 'initLedger'
 ## method defined
