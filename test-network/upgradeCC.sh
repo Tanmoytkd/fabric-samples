@@ -14,7 +14,6 @@ CHANNEL_NAME="zvoting"
 CC_NAME="zvoting"
 CC_SRC_PATH="$HOME/z-voting/chaincode/"
 CC_SRC_LANGUAGE="typescript"
-CC_SEQUENCE=1
 CC_END_POLICY="AND('Org1MSP.peer','Org2MSP.peer','Org3MSP.peer')"
 
 while [[ $# -ge 1 ]]; do
@@ -70,17 +69,17 @@ getSequenceID() {
   else
     CC_SEQUENCE=$(expr $CC_SEQUENCE + 1)
   fi
-
-  CC_VERSION="v$CC_SEQUENCE"
 }
 
 pushd $DIR
 
+if [[ -z "$CC_SEQUENCE" ]]; then
 getSequenceID 1
+fi
 
 println "${C_GREEN}Sequence: ${C_YELLOW} $CC_SEQUENCE ${C_RESET}"
 
-
+CC_VERSION="v$CC_SEQUENCE"
 ./network.sh deployCC -c $CHANNEL_NAME -ccn $CC_NAME -ccv $CC_VERSION -ccs $CC_SEQUENCE -ccp $CC_SRC_PATH -ccl $CC_SRC_LANGUAGE -ccep $CC_END_POLICY
 
 popd

@@ -50,44 +50,6 @@ fi
 
 CC_SRC_LANGUAGE=$(echo "$CC_SRC_LANGUAGE" | tr [:upper:] [:lower:])
 
-# do some language specific preparation to the chaincode before packaging
-if [ "$CC_SRC_LANGUAGE" = "go" ]; then
-  CC_RUNTIME_LANGUAGE=golang
-
-  infoln "Vendoring Go dependencies at $CC_SRC_PATH"
-  pushd $CC_SRC_PATH
-  GO111MODULE=on go mod vendor
-  popd
-  successln "Finished vendoring Go dependencies"
-
-elif [ "$CC_SRC_LANGUAGE" = "java" ]; then
-  CC_RUNTIME_LANGUAGE=java
-
-  infoln "Compiling Java code..."
-  pushd $CC_SRC_PATH
-  ./gradlew installDist
-  popd
-  successln "Finished compiling Java code"
-  CC_SRC_PATH=$CC_SRC_PATH/build/install/$CC_NAME
-
-elif [ "$CC_SRC_LANGUAGE" = "javascript" ]; then
-  CC_RUNTIME_LANGUAGE=node
-
-elif [ "$CC_SRC_LANGUAGE" = "typescript" ]; then
-  CC_RUNTIME_LANGUAGE=node
-
-  infoln "Compiling TypeScript code into JavaScript..."
-  pushd $CC_SRC_PATH
-  npm install
-  npm run build
-  popd
-  successln "Finished compiling TypeScript code into JavaScript"
-
-else
-  fatalln "The chaincode language ${CC_SRC_LANGUAGE} is not supported by this script. Supported chaincode languages are: go, java, javascript, and typescript"
-  exit 1
-fi
-
 INIT_REQUIRED="--init-required"
 # check if the init fcn should be called
 if [ "$CC_INIT_FCN" = "NA" ]; then
@@ -211,22 +173,23 @@ while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symli
 done
 DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
 
-$DIR/packageChaincode.sh 1 $@ repackage &
+$DIR/packageChaincode.sh 1 $@ repackage
 $DIR/packageChaincode.sh 2 $@ &
 $DIR/packageChaincode.sh 3 $@ &
+wait
+echo "packaging done"
 
 $DIR/packageChaincodeAndInstall.sh 1 $@ &
 $DIR/packageChaincodeAndInstall.sh 2 $@ &
 $DIR/packageChaincodeAndInstall.sh 3 $@ &
 wait
-echo "Wait if over"
+echo "Installation over"
 
-
-$DIR/queryInstalledChaincodeAndApprove.sh 1 $@ &
-$DIR/queryInstalledChaincodeAndApprove.sh 2 $@ &
-$DIR/queryInstalledChaincodeAndApprove.sh 3 $@ &
+$DIR/queryInstalledChaincodeAndApprove.sh 1 $@
+$DIR/queryInstalledChaincodeAndApprove.sh 2 $@
+$DIR/queryInstalledChaincodeAndApprove.sh 3 $@
 wait
-echo "Wait if over"
+echo "Chaincode approved"
 
 ## check whether the chaincode definition is ready to be committed
 ## expect org1 to have approved and org2, org3 not to
@@ -242,7 +205,7 @@ $DIR/queryCommittedChaincodes.sh 1 $@ &
 $DIR/queryCommittedChaincodes.sh 2 $@ &
 $DIR/queryCommittedChaincodes.sh 3 $@ &
 wait
-echo "Wait if over"
+echo "chaincode committed"
 
 ## Invoke the chaincode - this does require that the chaincode have the 'initLedger'
 ## method defined

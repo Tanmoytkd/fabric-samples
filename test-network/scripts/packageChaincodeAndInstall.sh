@@ -52,42 +52,44 @@ fi
 
 CC_SRC_LANGUAGE=$(echo "$CC_SRC_LANGUAGE" | tr [:upper:] [:lower:])
 
-# do some language specific preparation to the chaincode before packaging
-if [ "$CC_SRC_LANGUAGE" = "go" ]; then
-  CC_RUNTIME_LANGUAGE=golang
+if [[ -n "$REPACKAGE_CHAINCODE" ]]; then
+  # do some language specific preparation to the chaincode before packaging
+  if [ "$CC_SRC_LANGUAGE" = "go" ]; then
+    CC_RUNTIME_LANGUAGE=golang
 
-  infoln "Vendoring Go dependencies at $CC_SRC_PATH"
-  pushd $CC_SRC_PATH
-  GO111MODULE=on go mod vendor
-  popd
-  successln "Finished vendoring Go dependencies"
+    infoln "Vendoring Go dependencies at $CC_SRC_PATH"
+    pushd $CC_SRC_PATH
+    GO111MODULE=on go mod vendor
+    popd
+    successln "Finished vendoring Go dependencies"
 
-elif [ "$CC_SRC_LANGUAGE" = "java" ]; then
-  CC_RUNTIME_LANGUAGE=java
+  elif [ "$CC_SRC_LANGUAGE" = "java" ]; then
+    CC_RUNTIME_LANGUAGE=java
 
-  infoln "Compiling Java code..."
-  pushd $CC_SRC_PATH
-  ./gradlew installDist
-  popd
-  successln "Finished compiling Java code"
-  CC_SRC_PATH=$CC_SRC_PATH/build/install/$CC_NAME
+    infoln "Compiling Java code..."
+    pushd $CC_SRC_PATH
+    ./gradlew installDist
+    popd
+    successln "Finished compiling Java code"
+    CC_SRC_PATH=$CC_SRC_PATH/build/install/$CC_NAME
 
-elif [ "$CC_SRC_LANGUAGE" = "javascript" ]; then
-  CC_RUNTIME_LANGUAGE=node
+  elif [ "$CC_SRC_LANGUAGE" = "javascript" ]; then
+    CC_RUNTIME_LANGUAGE=node
 
-elif [ "$CC_SRC_LANGUAGE" = "typescript" ]; then
-  CC_RUNTIME_LANGUAGE=node
+  elif [ "$CC_SRC_LANGUAGE" = "typescript" ]; then
+    CC_RUNTIME_LANGUAGE=node
 
-  infoln "Compiling TypeScript code into JavaScript..."
-  pushd $CC_SRC_PATH
-  npm install
-  npm run build
-  popd
-  successln "Finished compiling TypeScript code into JavaScript"
+    infoln "Compiling TypeScript code into JavaScript..."
+    pushd $CC_SRC_PATH
+    npm install
+    npm run build
+    popd
+    successln "Finished compiling TypeScript code into JavaScript"
 
-else
-  fatalln "The chaincode language ${CC_SRC_LANGUAGE} is not supported by this script. Supported chaincode languages are: go, java, javascript, and typescript"
-  exit 1
+  else
+    fatalln "The chaincode language ${CC_SRC_LANGUAGE} is not supported by this script. Supported chaincode languages are: go, java, javascript, and typescript"
+    exit 1
+  fi
 fi
 
 INIT_REQUIRED="--init-required"
@@ -134,7 +136,7 @@ installChaincode() {
 }
 
 ## package the chaincode
-if [ -n $REPACKAGE_CHAINCODE]; then
+if [[ -n "$REPACKAGE_CHAINCODE" ]]; then
   packageChaincode
 fi
 
